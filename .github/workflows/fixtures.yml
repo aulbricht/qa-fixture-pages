@@ -1,0 +1,19 @@
+name: Fixture checks
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  fixtures:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check deterministic committed bytes
+        run: python3 generate.py --check
+      - name: Validate sizes, markup and extraction boundaries
+        run: python3 -m unittest -v test_fixtures.py
