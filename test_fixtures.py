@@ -1,6 +1,7 @@
 """Validate actual committed outputs, including the extraction boundary."""
 
 from html.parser import HTMLParser
+import hashlib
 import unittest
 
 from generate import ROOT, fixtures
@@ -16,6 +17,9 @@ class ArticleParser(HTMLParser):
 
     def handle_starttag(self, tag, attrs):
         attrs = dict(attrs)
+        if tag == "meta":
+            assert (attrs.get("http-equiv") or "").strip().casefold() != "refresh", "Meta refresh"
+        assert "style" not in attrs, "Inline style"
         if tag in ("script", "style"):
             self.hidden = tag
             self.blocks[tag] = ""
@@ -33,6 +37,8 @@ class ArticleParser(HTMLParser):
             self.hidden = None
 
     def handle_data(self, data):
+        if self.hidden == "style":
+            assert "@import" not in data.casefold(), "CSS import"
         if self.hidden:
             self.blocks[self.hidden] += data
         else:
@@ -41,7 +47,7 @@ class ArticleParser(HTMLParser):
 
 class FixtureTests(unittest.TestCase):
     def test_real_outputs_reproduce_and_parse(self):
-        expected_names = {"small.html", "20kb.html", "1mib.html", "4mib.html", "script-style.html"}
+        expected_names = {"small.html", "20kb.html", "1mib.html", "4mib.html", "script-style.html", "joint-overflow.html"}
         self.assertEqual(set(fixtures()), expected_names)
         for name, generated in fixtures().items():
             with self.subTest(page=name):
@@ -73,6 +79,44 @@ class FixtureTests(unittest.TestCase):
         self.assertEqual(sizes["4mib.html"], 4_194_304)
         body = (ROOT / "20kb.html").read_bytes().split(b"</h1>\n", 1)[1].split(b"</article>", 1)[0]
         self.assertEqual(len(body), 20_480)
+
+    def test_joint_overflow_has_eight_unchanged_paragraphs(self):
+        from generate import PARAGRAPH
+
+        data = (ROOT / "joint-overflow.html").read_text(encoding="ascii")
+        self.assertEqual(data.count("<p>"), 8)
+        self.assertEqual(data.count("</p>"), 8)
+        self.assertEqual(data.count("<p>" + PARAGRAPH + "</p>"), 8)
+        parser = ArticleParser()
+        parser.feed(data)
+        self.assertEqual(parser.blocks, {})
+        self.assertEqual(parser.handlers, [])
+
+    def test_original_five_bytes_unchanged(self):
+        # Accepted merged baseline 7bb92ac948561dc85e8d907964598e5212b8a906.
+        hashes = {
+            "small.html": "069e0a9414ff7b0eb04368640f1b123b1b3ad62cf7c04eb992ab0b3cbb75ae45",
+            "20kb.html": "842418d68d0efe96321f0fa77b2635ad86a226c1f8b69533e1e41f244bc3ce88",
+            "1mib.html": "37050e939e40a37688f80a6e2dfefc4581c9dab6e801d6a42301023f4c5afc8e",
+            "4mib.html": "022e9c41c87f956ce4649e5731737d429ee5fd2563f23a69948ae92c2bed6416",
+            "script-style.html": "fdff428f0ea1c4223198f28030ed4fe55b348da7d2b739d3df62ce13d005f061",
+        }
+        for name, expected in hashes.items():
+            with self.subTest(page=name):
+                self.assertEqual(hashlib.sha256((ROOT / name).read_bytes()).hexdigest(), expected)
+
+    def test_active_markup_is_rejected(self):
+        cases = (
+            '<meta http-equiv="refresh" content="0;url=https://example.invalid/">',
+            '<meta HTTP-EQUIV="ReFrEsH" content="0">',
+            '<p style="display:none">Hidden label</p>',
+            '<style>@import "https://example.invalid/a.css";</style>',
+            '<style>@IMPORT url(https://example.invalid/a.css);</style>',
+        )
+        for markup in cases:
+            with self.subTest(markup=markup):
+                with self.assertRaises(AssertionError):
+                    ArticleParser().feed(markup)
 
 
 if __name__ == "__main__":

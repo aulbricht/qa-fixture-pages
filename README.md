@@ -1,7 +1,7 @@
 # qa-fixture-pages
 Synthetic test pages for automated QA. No real content.
 
-These five ASCII-only pages support SNO-685 extraction checks on PR5085
+These six ASCII-only pages support SNO-685 extraction checks on PR5085
 `aaf3cd0b3ec0b841227640c0d3fcccf517fd9a19`. All observations describe an
 invented archive; the arithmetic is deliberately checkable.
 
@@ -20,6 +20,14 @@ python3 -m unittest -v test_fixtures.py
 | `1mib.html` | Exactly 1,048,576 bytes total |
 | `4mib.html` | Exactly 4,194,304 bytes total |
 | `script-style.html` | Short article plus over 100 KB each of script and style data |
+| `joint-overflow.html` | 2,956 bytes; exactly eight repeats of the existing synthetic paragraph |
+
+The joint-overflow page supports QA row #12d. Its measured size is 2,956 UTF-8
+bytes, rather than the earlier 3,071-byte estimate; no padding or cropping is
+used. The source size does not prove individual proof-frame admission or joint
+serialized overflow. QA must measure those in the consuming application and
+check that ordinary source checking remains intact. The original five page
+hashes are locked by a regression test.
 
 The script block uses the inert `application/json` type. CSS and event handlers
 contain only comments. Every page also denies scripts, styles and external
